@@ -207,17 +207,44 @@ Color Renderer::traceRay(const Ray& ray, const Scene& scene, int depth = 0) cons
 }
 void Renderer::render(const Scene& scene)
 {
-    for(int y = 0; y < height; ++y)
-    for(int x = 0; x < width;  ++x)
-    {
-        Ray   ray   = makeRay(x, y);
-        Color color = traceRay(ray, scene);
+    auto startTime = std::chrono::high_resolution_clock::now();
 
-int idx = ((height - 1 - y) * width + x) * 3;
-        pixels[idx+0] = static_cast<unsigned char>(std::min(color.r*255.f, 255.f));
-        pixels[idx+1] = static_cast<unsigned char>(std::min(color.g*255.f, 255.f));
-        pixels[idx+2] = static_cast<unsigned char>(std::min(color.b*255.f, 255.f));
+    std::vector<std::thread> threads;
+    threads.reserve(NUM_THREADS);
+
+    int rowsPerThread = height / NUM_THREADS;
+
+    for(int t = 0; t < NUM_THREADS; ++t)
+    {
+        int startY = t * rowsPerThread;
+        int endY   = (t == NUM_THREADS - 1) ? height : startY + rowsPerThread;
+
+        threads.emplace_back(&Renderer::renderStrip,
+                              this,
+                              std::cref(scene),
+                              startY, endY, t);
     }
+
+    for(auto& th : threads)
+        th.join();
+
+    auto endTime = std::chrono::high_resolution_clock::now();
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(endTime - startTime).count();
+
+    std::cout << "\n================================\n";
+    std::cout << "  Multi-Thread Render\n";
+    std::cout << "================================\n";
+    std::cout << "  Resolution : " << width << " x " << height << "\n";
+    std::cout << "  Threads    : " << NUM_THREADS << "\n";
+    std::cout << "  Objects    : " << scene.spheres.size()
+                                   + scene.planes.size() << "\n";
+    std::cout << "  Time       : " << ms << " ms";
+    if(ms > 1000)
+        std::cout << " (" << ms / 1000.0 << " s)";
+    std::cout << "\n  Rays/sec   : "
+              << (long long)(width * height) * 1000 / (ms > 0 ? ms : 1)
+              << "\n";
+    std::cout << "================================\n\n";
 }
 
 void Renderer::displayCallback()
@@ -227,6 +254,23 @@ void Renderer::displayCallback()
     glDrawPixels(instance->width, instance->height,
                  GL_RGB, GL_UNSIGNED_BYTE, instance->pixels.data());
     glFlush();
+}
+
+void Renderer::renderStrip(const Scene& scene,
+                            int startY, int endY,
+                            int threadID)
+{
+    for(int y = startY; y < endY; ++y)
+    for(int x = 0; x < width;  ++x)
+    {
+        Ray   ray   = makeRay(x, y);
+        Color color = traceRay(ray, scene, 0);
+
+        int idx = ((height - 1 - y) * width + x) * 3;
+        pixels[idx+0] = static_cast<unsigned char>(std::min(color.r * 255.f, 255.f));
+        pixels[idx+1] = static_cast<unsigned char>(std::min(color.g * 255.f, 255.f));
+        pixels[idx+2] = static_cast<unsigned char>(std::min(color.b * 255.f, 255.f));
+    }
 }
 
 void Renderer::reshapeCallback(int w, int h)

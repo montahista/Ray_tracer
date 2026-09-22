@@ -1,6 +1,9 @@
 #pragma once
+#include <thread>
 #include "Scene.h"
 #include <vector>
+#include <chrono>
+#include <iostream>
 
 class Renderer {
 public:
@@ -41,4 +44,9 @@ private:
 
     static Renderer* instance;
     static const int MAX_DEPTH = 4;  
+    static const int NUM_THREADS = 4;
+
+    void renderStrip(const Scene& scene,
+                 int startY, int endY,
+                 int threadID); 
 };
